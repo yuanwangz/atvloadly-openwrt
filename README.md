@@ -25,13 +25,12 @@ OpenWrt 路由器上的 atvloadly
 
 ## 1. 下载并安装
 
-从本项目的 **Releases** 下载 `atvloadly-openwrt-aarch64.tar.gz` 和同名 `.sha256` 文件。将两个文件上传到路由器的 `/tmp` 目录。
+从本项目的 **Releases** 下载 `atvloadly-openwrt-aarch64.tar.gz`，并上传到路由器的 `/tmp` 目录。
 
 打开路由器终端，在 `/tmp` 中执行：
 
 ```sh
 cd /tmp
-sha256sum -c atvloadly-openwrt-aarch64.tar.gz.sha256
 tar -xzf atvloadly-openwrt-aarch64.tar.gz
 cd atvloadly-openwrt
 ./install.sh
