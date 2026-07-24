@@ -23,36 +23,13 @@ OpenWrt 路由器上的 atvloadly
 
 首次安装、手动刷新和自动续签均使用同一个远程 URL。URL 对应的 IPA 更新后，下一次刷新会自动使用新版本；路由器不会把 IPA 保存到闪存。
 
-## 1. 修复路由器 DNS
+## 1. 下载并安装
 
-OpenWrt 的 `/etc/resolv.conf` 应由网络服务自动生成，不能手工写死为空文件。以下命令为 WAN 配置两个可靠的 DNS，并保留默认的局域网 DNS 转发行为：
+从本项目的 **Releases** 下载 `atvloadly-openwrt-aarch64.tar.gz` 和同名 `.sha256` 文件。将两个文件上传到路由器的 `/tmp` 目录。
 
-```sh
-ssh root@192.168.31.1
-
-uci set network.wan.peerdns='0'
-uci -q delete network.wan.dns
-uci add_list network.wan.dns='223.5.5.5'
-uci add_list network.wan.dns='119.29.29.29'
-uci commit network
-/etc/init.d/network reload
-
-nslookup github.com
-```
-
-网络重载时 SSH 可能短暂断开，重新连接即可。最后一条命令能返回 GitHub 的地址即表示 DNS 正常。
-
-无需为 `15533` 单独开放 WAN 防火墙端口；OpenWrt 默认允许局域网访问路由器本机服务。不要把管理页面暴露到公网。
-
-## 2. 下载并安装
-
-从本项目的 **Releases** 下载 `atvloadly-openwrt-aarch64.tar.gz` 和同名 `.sha256` 文件。将二者上传到路由器的 `/tmp`：
+打开路由器终端，在 `/tmp` 中执行：
 
 ```sh
-scp atvloadly-openwrt-aarch64.tar.gz root@192.168.31.1:/tmp/
-scp atvloadly-openwrt-aarch64.tar.gz.sha256 root@192.168.31.1:/tmp/
-
-ssh root@192.168.31.1
 cd /tmp
 sha256sum -c atvloadly-openwrt-aarch64.tar.gz.sha256
 tar -xzf atvloadly-openwrt-aarch64.tar.gz
@@ -68,9 +45,9 @@ cd atvloadly-openwrt
 - 把临时目录固定为 `/tmp/atvloadly`；
 - 配置大 IPA 签名期间临时的内存保护策略，并在任务结束后自动恢复。
 
-安装后，在同一局域网浏览器打开：`http://192.168.31.1:15533`。
+安装后，在同一局域网浏览器打开：`http://<路由器局域网地址>:15533`。
 
-## 3. 首次配对和安装
+## 2. 首次配对和安装
 
 1. 确保 Apple TV 与路由器处于同一局域网。
 2. 在页面中发现并配对 Apple TV；这是首次操作，配对信息会被持久保存。
@@ -89,7 +66,7 @@ https://github.com/<owner>/<repo>/releases/latest/download/VidPlayPlus-tvOS-deve
 
 CoreADI 更新会临时下载 Apple Music APK 并仅持久保留所需运行库；该过程不把 Apple 的运行库打进本项目的公开发布包。
 
-## 4. 自动续签与更新
+## 3. 自动续签与更新
 
 `atvloadly` 自带调度器，不需要设置路由器 cron。默认在应用到期前一天的凌晨时段执行刷新；可在网页设置中调整提前天数和时间。
 
@@ -137,7 +114,7 @@ cd /tmp/atvloadly-openwrt
 
 **自动续签失败，提示下载错误**
 
-先运行 `nslookup github.com`，再确认 IPA URL 可在无登录状态下直接下载。也检查 `/tmp` 是否至少保留约 250 MB 空间。
+确认 IPA URL 可在无登录状态下直接下载，并检查 `/tmp` 是否至少保留约 250 MB 空间。
 
 **自动续签失败，提示 Apple ID 无效**
 

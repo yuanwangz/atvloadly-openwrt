@@ -23,6 +23,8 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: "1.25.x"
+      - id: goenv
+        run: echo "root=$(go env GOROOT)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -38,33 +40,34 @@ jobs:
           cd ../..
           go test ./...
 
-      - name: 准备 aarch64 musl 交叉编译器
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/aarch64-linux-musl-cross.tgz" https://musl.cc/aarch64-linux-musl-cross.tgz
-          tar -xzf "$RUNNER_TEMP/aarch64-linux-musl-cross.tgz" -C "$RUNNER_TEMP"
-
-      - name: 构建静态 musl atvloadly
-        run: |
-          mkdir -p release/bin
-          CC="$RUNNER_TEMP/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc" \
-          CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build \
-            -trimpath \
-            -ldflags='-linkmode external -extldflags=-static -s -w' \
-            -o release/bin/atvloadly .
-          file release/bin/atvloadly
-
-      - name: 构建静态 musl plumesign RSD
+      - name: 获取 RSD 签名器源码
         run: |
           git clone --depth 1 --branch rsd https://github.com/bitxeno/PlumeImpactor.git .build/plumeimpactor
           git -C .build/plumeimpactor checkout "$PLUMEIMPACTOR_REV"
+
+      - name: 构建静态 musl atvloadly 与 plumesign RSD
+        run: |
+          mkdir -p release/bin
           docker run --rm \
-            -v "$GITHUB_WORKSPACE/.build/plumeimpactor:/home/rust/src" \
-            -w /home/rust/src \
+            -v "$GITHUB_WORKSPACE:/src" \
+            -v "${{ steps.goenv.outputs.root }}:/opt/go:ro" \
+            -w /src \
             messense/rust-musl-cross:aarch64-musl \
-            cargo build --release --bin plumesign
+            sh -c '
+              set -eu
+              export GOROOT=/opt/go
+              export PATH="$GOROOT/bin:$PATH"
+              CC=aarch64-linux-musl-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build \
+                -trimpath \
+                -ldflags="-linkmode external -extldflags=-static -s -w" \
+                -o release/bin/atvloadly .
+              cd .build/plumeimpactor
+              cargo build --release --bin plumesign
+            '
           cp .build/plumeimpactor/target/aarch64-unknown-linux-musl/release/plumesign release/bin/plumesign
           rm -rf .build/plumeimpactor
           docker image rm messense/rust-musl-cross:aarch64-musl || true
+          file release/bin/atvloadly
           file release/bin/plumesign
 
       - name: UPX 极限压缩并自检
