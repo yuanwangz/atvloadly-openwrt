@@ -13,6 +13,7 @@ type InstalledApp struct {
 
 	IpaName          string         `json:"ipa_name"`
 	IpaPath          string         `json:"ipa_path"`
+	SourceURL        string         `json:"source_url,omitempty"`
 	Description      string         `json:"description,omitempty"`
 	Device           string         `json:"device"`
 	DeviceClass      string         `json:"device_class"`

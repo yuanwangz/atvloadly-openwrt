@@ -172,7 +172,7 @@ func UpdateCoreADI() error {
 		return fmt.Errorf("download failed, status: %d", resp.StatusCode)
 	}
 
-	tmpDir := filepath.Join(app.Config.Server.DataDir, "tmp")
+	tmpDir := app.TempDir()
 	if err := os.MkdirAll(tmpDir, os.ModePerm); err != nil {
 		return fmt.Errorf("create tmp dir failed: %w", err)
 	}
@@ -182,15 +182,14 @@ func UpdateCoreADI() error {
 	if err != nil {
 		return fmt.Errorf("create temp file failed: %w", err)
 	}
+	defer func() {
+		_ = os.Remove(tmpPath)
+	}()
 	if _, err := io.Copy(tmpOut, resp.Body); err != nil {
 		_ = tmpOut.Close()
 		return fmt.Errorf("save temp file failed: %w", err)
 	}
 	_ = tmpOut.Close()
-
-	defer func() {
-		_ = os.Remove(tmpPath)
-	}()
 
 	// open zip and extract specific lib files
 	zr, err := zip.OpenReader(tmpPath)

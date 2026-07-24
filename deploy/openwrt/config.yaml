@@ -1,0 +1,10 @@
+server:
+  listen_addr: 0.0.0.0
+  port: 15533
+  work_dir: /opt/atvloadly/data
+  temp_dir: /tmp/atvloadly
+
+log:
+  level: info
+  log_file: /tmp/atvloadly/atvloadly.log
+  access_log: /tmp/atvloadly/access.log

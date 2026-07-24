@@ -34,9 +34,22 @@ type Configuration struct {
 		ListenAddr string `koanf:"listen_addr" default:"0.0.0.0"`
 		Port       int    `koanf:"port" default:"9000"`
 		DataDir    string `koanf:"work_dir"`
+		TempDir    string `koanf:"temp_dir"`
 	} `koanf:"server" json:"server"`
 
 	Db db.Config `koanf:"db" json:"db"`
+}
+
+// TempDir returns the directory for disposable downloads, signing files and logs.
+// Author: XX. Router builds keep large IPA files on tmpfs instead of persistent flash.
+func TempDir() string {
+	if Config != nil && Config.Server.TempDir != "" {
+		return Config.Server.TempDir
+	}
+	if Config != nil && Config.Server.DataDir != "" {
+		return filepath.Join(Config.Server.DataDir, "tmp")
+	}
+	return os.TempDir()
 }
 
 func SideloadDataDir() string {

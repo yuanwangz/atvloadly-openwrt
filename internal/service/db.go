@@ -80,6 +80,7 @@ func SaveApp(app model.InstalledApp) (*model.InstalledApp, error) {
 
 		now := time.Now()
 		cur.IpaPath = app.IpaPath
+		cur.SourceURL = app.SourceURL
 		cur.Icon = app.Icon
 		cur.Version = app.Version
 		cur.RefreshedDate = &now
@@ -88,9 +89,13 @@ func SaveApp(app model.InstalledApp) (*model.InstalledApp, error) {
 		cur.RefreshedError = app.RefreshedError
 		cur.Password = app.Password
 
-		// 把 ipa/icon 移动到 ipa 保存目录
 		saveDir := filepath.Join(conf.Config.Server.DataDir, "ipa", fmt.Sprintf("%d", app.ID))
-		if cur.IpaPath != "" {
+		// Author: XX. Remote sources retain only their URL so refreshes never write large IPAs to router flash.
+		if cur.SourceURL != "" {
+			_ = os.RemoveAll(saveDir)
+			cur.IpaPath = ""
+			cur.Icon = ""
+		} else if cur.IpaPath != "" {
 			ipaPath := filepath.Join(saveDir, "app.ipa")
 			if err := os.Rename(cur.IpaPath, ipaPath); err != nil {
 				log.Err(err).Msgf("Can not move to %s", ipaPath)
@@ -109,6 +114,7 @@ func SaveApp(app model.InstalledApp) (*model.InstalledApp, error) {
 
 		updateData := map[string]any{
 			"ipa_path":         cur.IpaPath,
+			"source_url":       cur.SourceURL,
 			"icon":             cur.Icon,
 			"version":          cur.Version,
 			"refreshed_date":   cur.RefreshedDate,
@@ -127,11 +133,18 @@ func SaveApp(app model.InstalledApp) (*model.InstalledApp, error) {
 		now := time.Now()
 		app.Enabled = true
 		app.InstalledDate = &now
+		// Author: XX. A remote IPA path is valid only for this signing task; the database retains its download URL.
+		if app.SourceURL != "" {
+			app.IpaPath = ""
+			app.Icon = ""
+		}
 		if result := db.Store().Create(&app); result.Error != nil {
 			return nil, result.Error
 		}
+		if app.SourceURL != "" {
+			return &app, nil
+		}
 
-		// 把 ipa/icon 移动到 ipa 保存目录
 		saveDir := filepath.Join(conf.Config.Server.DataDir, "ipa", fmt.Sprintf("%d", app.ID))
 		if err := os.MkdirAll(saveDir, os.ModePerm); err != nil {
 			return nil, fmt.Errorf("failed to create directory : %s, error: %s", saveDir, err)
@@ -166,6 +179,8 @@ func SaveApp(app model.InstalledApp) (*model.InstalledApp, error) {
 
 func UpdateAppRefreshResult(app model.InstalledApp) error {
 	updateData := map[string]any{
+		"ipa_name":         app.IpaName,
+		"version":          app.Version,
 		"refreshed_date":   app.RefreshedDate,
 		"expiration_date":  app.ExpirationDate,
 		"refreshed_result": app.RefreshedResult,
@@ -183,8 +198,8 @@ func DeleteApp(id uint) (bool, error) {
 		if result := db.Store().Delete(&model.InstalledApp{}, id); result.Error != nil {
 			return false, result.Error
 		}
-		ipaDir := filepath.Dir(v.IpaPath)
-		_ = os.RemoveAll(ipaDir)
+		// Author: XX. Remote apps have no ipa_path, so cleanup uses the controlled per-app directory instead of an empty path.
+		_ = os.RemoveAll(filepath.Join(conf.Config.Server.DataDir, "ipa", fmt.Sprintf("%d", v.ID)))
 	}
 
 	return true, nil

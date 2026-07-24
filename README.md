@@ -1,152 +1,152 @@
-<p align="center">
-  <img width="500" src="./doc/preview/logo.svg">
-</p>
+# atvloadly-openwrt
 
+让 OpenWrt 路由器在局域网内直接为 Apple TV 安装和自动续签 IPA。
 
-<div align="center">
+不需要 VPS、Tailscale、Docker 或外接存储。路由器只持久保存程序、Apple ID 会话和 Apple TV 配对信息；IPA 仅在安装或续签时下载到 `/tmp` 内存盘，完成后自动清理。
 
-[![platform](https://img.shields.io/badge/platform-linux%20%7C%20openwrt-989898)](https://github.com/bitxeno/atvloadly/internal/releases)
-[![release](https://img.shields.io/docker/v/bitxeno/atvloadly?label=docker%20latest&sort=semver)](https://hub.docker.com/r/bitxeno/atvloadly)
-[![Docker Image Size](https://img.shields.io/docker/image-size/bitxeno/atvloadly)](https://hub.docker.com/r/bitxeno/atvloadly)
-[![Docker Pulls](https://img.shields.io/docker/pulls/bitxeno/atvloadly)](https://hub.docker.com/r/bitxeno/atvloadly)
-[![license](https://img.shields.io/github/license/bitxeno/atvloadly)](https://github.com/bitxeno/atvloadly/internal/blob/master/LICENSE)
+> 适用目标：`aarch64_cortex-a53`、musl 的 OpenWrt 路由器。安装前请先确认路由器的 `/tmp` 至少有 250 MB 可用空间。
 
-</div>
+## 它如何工作
 
-<div align="center">
+```text
+IPA 发布地址（例如 GitHub Release）
+              │ 仅在任务开始时下载
+              ▼
+OpenWrt 路由器上的 atvloadly
+  ├─ 保存 IPA URL、Apple ID 会话、Apple TV 配对信息
+  ├─ 内置定时续签任务
+  └─ 按需启动 plumesign 重签和安装
+              │
+              ▼
+          Apple TV
+```
 
-English | [中文](./README_cn.md)
+首次安装、手动刷新和自动续签均使用同一个远程 URL。URL 对应的 IPA 更新后，下一次刷新会自动使用新版本；路由器不会把 IPA 保存到闪存。
 
-</div>
+## 1. 修复路由器 DNS
 
-atvloadly is a web service that supports sideloading app on Apple TV. It uses [Impactor](https://github.com/claration/Impactor) as the underlying technology for sideloading and automatically refreshes the app to ensure its long-term availability.
+OpenWrt 的 `/etc/resolv.conf` 应由网络服务自动生成，不能手工写死为空文件。以下命令为 WAN 配置两个可靠的 DNS，并保留默认的局域网 DNS 转发行为：
 
-## Features
+```sh
+ssh root@192.168.31.1
 
-* Docker running (only supports Linux/OpenWrt platforms)
-* Supports AppleTV pairing
-* Supports automatic app refresh
-* Supports use of multiple Apple ID accounts
-* I18n support
+uci set network.wan.peerdns='0'
+uci -q delete network.wan.dns
+uci add_list network.wan.dns='223.5.5.5'
+uci add_list network.wan.dns='119.29.29.29'
+uci commit network
+/etc/init.d/network reload
 
-## Screenshots
+nslookup github.com
+```
 
-<p align="center">
-  <img width="600" src="./doc/preview/home_en.png">
-</p>
-<p align="center">
-  <img width="600" src="./doc/preview/install_en.png">
-</p>
+网络重载时 SSH 可能短暂断开，重新连接即可。最后一条命令能返回 GitHub 的地址即表示 DNS 正常。
 
-## Installation
+无需为 `15533` 单独开放 WAN 防火墙端口；OpenWrt 默认允许局域网访问路由器本机服务。不要把管理页面暴露到公网。
 
-> 😔 **Only supports Linux/OpenWrt systems, does not support Mac/Windows systems.**
+## 2. 下载并安装
 
-1. The Linux/OpenWrt host needs to install `avahi-deamon`.
-   
-   **OpenWrt：**
-   ```
-   opkg install avahi-dbus-daemon
-   /etc/init.d/avahi-daemon start
-   ```
-   
-   **Ubuntu:**
-   ```
-   sudo apt-get -y install avahi-daemon
-   sudo systemctl restart avahi-daemon
-   ```
+从本项目的 **Releases** 下载 `atvloadly-openwrt-aarch64.tar.gz` 和同名 `.sha256` 文件。将二者上传到路由器的 `/tmp`：
 
-2. Please refer to the following command for installation, remember to modify the mount directory.
-   
-   **Docker:**
-   ```
-   docker run --security-opt seccomp:unconfined -d --name=atvloadly --restart=always -p 5533:80 -v /path/to/mount/dir:/data -v /var/run/dbus:/var/run/dbus -v /var/run/avahi-daemon:/var/run/avahi-daemon bitxeno/atvloadly:latest
-   ```
+```sh
+scp atvloadly-openwrt-aarch64.tar.gz root@192.168.31.1:/tmp/
+scp atvloadly-openwrt-aarch64.tar.gz.sha256 root@192.168.31.1:/tmp/
 
-   The `/var/run/dbus` and `/var/run/avahi-daemon` of the host machine need to be shared with the docker container for use.
+ssh root@192.168.31.1
+cd /tmp
+sha256sum -c atvloadly-openwrt-aarch64.tar.gz.sha256
+tar -xzf atvloadly-openwrt-aarch64.tar.gz
+cd atvloadly-openwrt
+./install.sh
+```
 
-   If you want to use the HOST network and want to modify the listening port, you can add environment variables to container:
+安装脚本会完成以下工作：
 
-   ```
-   SERVICE_PORT=5533
-   ```
+- 将两个静态二进制写入 `/opt/atvloadly/bin`；
+- 创建仅 root 可读写的数据目录；
+- 写入并启用 OpenWrt 开机服务；
+- 把临时目录固定为 `/tmp/atvloadly`；
+- 配置大 IPA 签名期间临时的内存保护策略，并在任务结束后自动恢复。
 
-   **Docker Compose:**
-   ```
-   wget https://raw.githubusercontent.com/bitxeno/atvloadly/refs/heads/master/docker-compose.yml
-   docker compose pull
-   docker compose up -d
-   ```
+安装后，在同一局域网浏览器打开：`http://192.168.31.1:15533`。
 
+## 3. 首次配对和安装
 
+1. 确保 Apple TV 与路由器处于同一局域网。
+2. 在页面中发现并配对 Apple TV；这是首次操作，配对信息会被持久保存。
+3. 首次使用时，打开“设置 → 高级 → 更新 CoreADI”，等待运行库下载并提取完成。
+4. 登录 Apple ID。若 Apple 要求双重验证，按页面提示完成验证。
+5. 使用应用安装页面的 **URL** 输入框填写 IPA 的直接下载地址，而不是上传本地 IPA。
+6. 安装后保持该应用的自动刷新开关启用。
 
-## Getting Started
+推荐使用稳定地址，例如：
 
-### Preparation (very important‼️)
+```text
+https://github.com/<owner>/<repo>/releases/latest/download/VidPlayPlus-tvOS-development.ipa
+```
 
-1. A burned account
-> Dedicated Apple ID installation account, both free or developer accounts are acceptable (**For security reasons, avoid using commonly used accounts. Instead, create a burned account for installation!**)
-2. A phone to 2FA Verification
-> atvloadly needs to be authorized as a trusted device (it will be virtualized as a MacBook). When logging in, Apple will send a 2FA verification code to the registered phone number of your account or to a device that has already logged in with the installation account. Please authorize and verify promptly.
+该 URL 必须能由路由器匿名直接下载。GitHub 私有 Release 需要额外鉴权，不能直接作为本版本的远程 IPA 源。
 
-### Operation process
+CoreADI 更新会临时下载 Apple Music APK 并仅持久保留所需运行库；该过程不把 Apple 的运行库打进本项目的公开发布包。
 
-1. Open the Apple TV settings menu, select `Remote and Devices -> Remote App and Devices`, enter pairing mode.
-2. Open the web management page, normally it will display the pairable `AppleTV`.
-3. Click on the `AppleTV` device to enter the pairing page and complete the pairing operation.
-4. After successful pairing, return to the home page, where the connected `AppleTV` will be displayed.
-5. Click on the connected `AppleTV` to enter the sideload installation page, select the IPA file that needs to be sideloaded, and click `Install`.
+## 4. 自动续签与更新
 
-## FAQ
+`atvloadly` 自带调度器，不需要设置路由器 cron。默认在应用到期前一天的凌晨时段执行刷新；可在网页设置中调整提前天数和时间。
 
-1. How many apps can be installed with a free account?
+每次刷新时会依次：
 
-> Each free Apple ID can register up to 10 apps and activate up to 3 apps simultaneously. Installing more than 3 will cause previously installed apps to become unavailable.
+1. 从保存的远程 URL 下载 IPA 到 `/tmp/atvloadly`；
+2. 重签并通过局域网安装到 Apple TV；
+3. 删除 IPA、签名工作目录、安装日志和临时缓存；
+4. 记录最新有效期与刷新结果。
 
-2. Unable to find AppleTV
+发布新版应用时，只需将新版 IPA 发布到同一个稳定 URL。路由器无需再次上传或修改配置。
 
-> Please turn off the VPN, restart the AppleTV, re-enter pairing mode, make sure **[Tool]** can detect devices of the `_remotepairing-manual-pairing._tcp` type, and pair again.
->
-> Try using `privileged: true` in your docker-compose.yml or `--privileged` in your docker run command instead of `--security-opt seccomp:unconfined`.
+## 日常维护
 
-3. Failed to log in to Apple account
+查看服务和临时空间：
 
-> This may have triggered Apple's risk control. Apple has login restrictions for certain regions. You can try adding a proxy in the settings. Alternatively, try creating a new account.
+```sh
+/etc/init.d/atvloadly status
+logread -e atvloadly
+df -h /overlay /tmp
+```
 
-4. IPA crashes after installation
+升级本项目时，解压新安装包后再次执行 `./install.sh`。已有 Apple ID 会话、配对信息、远程 IPA URL 和应用记录都会保留。
 
-> If the IPA requires permissions such as CloudKit, only paid developer accounts can sign and enable them. After sideloading with atvloadly, the IPA's `Bundle Identifier` will be modified, and some IPAs may restrict this, causing crashes.
+如需完全卸载：
 
-5. Installation failure after system upgrade.
+```sh
+cd /tmp/atvloadly-openwrt
+./uninstall.sh
+```
 
-> After upgrading the system, re-pairing is required. Generally, newly released systems are not supported. It is recommended to disable automatic system updates.
+卸载会删除 `/opt/atvloadly` 中的会话、配对数据和应用设置。
 
-6. Can App-specific passwords be used for passwords? Is it more secure this way?
+## 构建产物
 
-> Currently does not support it.
+每次推送都会通过 GitHub Actions 构建：
 
-## API
+- 静态 musl `atvloadly`，使用纯 Go mDNS，不依赖 Avahi 或 D-Bus；
+- 静态 musl、支持 RSD 的 `plumesign`；
+- 经 UPX `--best --lzma` 压缩并通过完整性校验的 OpenWrt 安装包。
 
-- `/healthcheck`: Return service health status (200 indicates normal, 503 indicates that an app has expired).
+普通推送可在 Actions 的构建产物中下载；推送 `v*` 标签会创建 GitHub Release。
 
-- `/mcp`: MCP service api, streamable http transport, can connect to AI Agent to install or refresh apps.
+## 常见问题
 
+**自动续签失败，提示下载错误**
 
-## How to build
+先运行 `nslookup github.com`，再确认 IPA URL 可在无登录状态下直接下载。也检查 `/tmp` 是否至少保留约 250 MB 空间。
 
-[>> wiki](https://github.com/bitxeno/atvloadly/wiki/How-to-build)
+**自动续签失败，提示 Apple ID 无效**
 
-## Credits
+Apple 会话可能过期或需要再次完成双重验证。打开管理页面重新登录后，下一次刷新会继续使用新会话。
 
-[Impactor](https://github.com/claration/Impactor): the sideload core
+**路由器重启后还能续签吗？**
 
-[idevice](https://github.com/jkcoxson/idevice): libimobiledevice in pure Rust
+可以。开机服务会恢复 `atvloadly`，配对信息、账户会话和远程 IPA URL 都保存在 `/opt/atvloadly/data`；IPA 本身不保存，任务运行时会重新下载。
 
-[usbmuxd2](https://github.com/tihmstar/usbmuxd2): usbmuxd implementation for linux
+## 致谢
 
-[frida-core:](https://github.com/frida/frida-core): remote pairing connection reference
-
-## Disclaimer
-
-* This software is only for learning and communication purposes. The author does not assume any legal responsibility for the security risks or losses caused by the use of this software.
-* Before using this software, you should understand and bear corresponding risks, including but not limited to account freezing, which are unrelated to this software.
+本项目基于 [bitxeno/atvloadly](https://github.com/bitxeno/atvloadly) 和 [bitxeno/PlumeImpactor](https://github.com/bitxeno/PlumeImpactor) 构建。

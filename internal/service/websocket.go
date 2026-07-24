@@ -68,10 +68,15 @@ func HandleInstallMessage(c *websocket.Conn) {
 
 func runInstallMessage(mgr *manager.WebsocketManager, installMgr *manager.InstallManager, v model.InstalledApp, dev *model.Device) {
 	ipaPath := v.IpaPath
-	if strings.HasPrefix(ipaPath, "http:") || strings.HasPrefix(ipaPath, "https:") {
+	sourceURL := strings.TrimSpace(v.SourceURL)
+	if sourceURL == "" && (strings.HasPrefix(ipaPath, "http:") || strings.HasPrefix(ipaPath, "https:")) {
+		sourceURL = ipaPath
+	}
+	// Author: XX. Interactive installs and scheduled refreshes use the same remote-source rule and task-local files.
+	if sourceURL != "" {
 		mgr.WriteMessage("Downloading IPA from URL...\n")
 		lastPct := int64(-1)
-		result, err := ipa.DownloadAndParse(ipaPath, func(downloaded, total int64) {
+		result, err := ipa.DownloadAndParse(sourceURL, func(downloaded, total int64) {
 			if total <= 0 {
 				return
 			}
@@ -96,6 +101,7 @@ func runInstallMessage(mgr *manager.WebsocketManager, installMgr *manager.Instal
 		mgr.WriteMessage("Download complete!\n")
 
 		v.IpaPath = result.LocalPath
+		v.SourceURL = sourceURL
 		v.IpaName = result.Name
 		v.BundleIdentifier = result.BundleIdentifier
 		v.Version = result.Version

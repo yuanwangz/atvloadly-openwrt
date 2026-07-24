@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -208,6 +209,9 @@ func (t *Task) tryInstallApp(item TaskItem) {
 	defer func() {
 		installMgr.SaveLog(v.ID)
 		installMgr.CleanTempFiles(v.IpaPath)
+		if v.SourceURL != "" && v.Icon != "" {
+			_ = os.Remove(v.Icon)
+		}
 		installMgr.Close()
 	}()
 	provisioningProfile, err := t.runInternal(v, installMgr)
@@ -266,31 +270,39 @@ func (t *Task) handleInstallFailure(item TaskItem, v model.InstalledApp, err err
 }
 
 func (t *Task) resolveIPA(v model.InstalledApp) (*model.InstalledApp, error) {
-	// Not new install, return directly to avoid unnecessary download
-	if v.ID != 0 {
-		return &v, nil
+	sourceURL := strings.TrimSpace(v.SourceURL)
+	if sourceURL == "" && (strings.HasPrefix(v.IpaPath, "http:") || strings.HasPrefix(v.IpaPath, "https:")) {
+		sourceURL = v.IpaPath
 	}
 
-	if strings.HasPrefix(v.IpaPath, "http:") || strings.HasPrefix(v.IpaPath, "https:") {
-		result, err := ipa.DownloadAndParse(v.IpaPath, nil)
+	// Author: XX. Each remote install downloads again so automatic refresh never depends on a flash-resident IPA.
+	if sourceURL != "" {
+		result, err := ipa.DownloadAndParse(sourceURL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to download ipa: %w", err)
 		}
+		v.SourceURL = sourceURL
 		v.IpaPath = result.LocalPath
 		v.IpaName = result.Name
 		v.BundleIdentifier = result.BundleIdentifier
 		v.Version = result.Version
 		v.Icon = result.IconPath
-	} else {
-		result, err := ipa.ParseLocalIPA(v.IpaPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse ipa file: %w", err)
-		}
-		v.IpaName = result.Name
-		v.BundleIdentifier = result.BundleIdentifier
-		v.Version = result.Version
-		v.Icon = result.IconPath
+		return &v, nil
 	}
+
+	// 已保存的本地 IPA 沿用原有行为，兼容非路由器部署和已有安装记录。
+	if v.ID != 0 {
+		return &v, nil
+	}
+
+	result, err := ipa.ParseLocalIPA(v.IpaPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse ipa file: %w", err)
+	}
+	v.IpaName = result.Name
+	v.BundleIdentifier = result.BundleIdentifier
+	v.Version = result.Version
+	v.Icon = result.IconPath
 
 	return &v, nil
 }

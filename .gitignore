@@ -19,6 +19,9 @@ tmp/
 dist/
 /build
 node_modules/
+web/static/node_modules/
+release/
+.build/
 atvloadly
 main
 AltServerData/

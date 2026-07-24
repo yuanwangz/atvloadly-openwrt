@@ -1,0 +1,105 @@
+name: 构建 OpenWrt 本地部署包
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-openwrt:
+    runs-on: ubuntu-latest
+    env:
+      UPX_VERSION: 4.2.4
+      PLUMEIMPACTOR_REV: 1c2da0a7f7d17238602fa9169f52b0995fadbd03
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v6
+
+      - name: 配置 Go 与 Node
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.x"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 构建前端并执行测试
+        run: |
+          cd web/static
+          pnpm install --frozen-lockfile
+          pnpm run build
+          cd ../..
+          go test ./...
+
+      - name: 准备 aarch64 musl 交叉编译器
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/aarch64-linux-musl-cross.tgz" https://musl.cc/aarch64-linux-musl-cross.tgz
+          tar -xzf "$RUNNER_TEMP/aarch64-linux-musl-cross.tgz" -C "$RUNNER_TEMP"
+
+      - name: 构建静态 musl atvloadly
+        run: |
+          mkdir -p release/bin
+          CC="$RUNNER_TEMP/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc" \
+          CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build \
+            -trimpath \
+            -ldflags='-linkmode external -extldflags=-static -s -w' \
+            -o release/bin/atvloadly .
+          file release/bin/atvloadly
+
+      - name: 构建静态 musl plumesign RSD
+        run: |
+          git clone --depth 1 --branch rsd https://github.com/bitxeno/PlumeImpactor.git .build/plumeimpactor
+          git -C .build/plumeimpactor checkout "$PLUMEIMPACTOR_REV"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/.build/plumeimpactor:/home/rust/src" \
+            -w /home/rust/src \
+            messense/rust-musl-cross:aarch64-musl \
+            cargo build --release --bin plumesign
+          cp .build/plumeimpactor/target/aarch64-unknown-linux-musl/release/plumesign release/bin/plumesign
+          rm -rf .build/plumeimpactor
+          docker image rm messense/rust-musl-cross:aarch64-musl || true
+          file release/bin/plumesign
+
+      - name: UPX 极限压缩并自检
+        run: |
+          curl -fsSL -o /tmp/upx.tar.xz "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-amd64_linux.tar.xz"
+          tar -xJf /tmp/upx.tar.xz -C /tmp
+          /tmp/upx-${UPX_VERSION}-amd64_linux/upx --best --lzma release/bin/atvloadly release/bin/plumesign
+          /tmp/upx-${UPX_VERSION}-amd64_linux/upx -t release/bin/atvloadly release/bin/plumesign
+          ls -lh release/bin
+
+      - name: 生成 OpenWrt 安装包
+        run: |
+          mkdir -p release/package/atvloadly-openwrt
+          cp -R release/bin release/package/atvloadly-openwrt/
+          cp deploy/openwrt/config.yaml release/package/atvloadly-openwrt/
+          cp deploy/openwrt/atvloadly.init release/package/atvloadly-openwrt/
+          cp deploy/openwrt/install.sh release/package/atvloadly-openwrt/
+          cp deploy/openwrt/uninstall.sh release/package/atvloadly-openwrt/
+          chmod 755 release/package/atvloadly-openwrt/*.sh release/package/atvloadly-openwrt/atvloadly.init
+          tar -C release/package -czf release/atvloadly-openwrt-aarch64.tar.gz atvloadly-openwrt
+          sha256sum release/atvloadly-openwrt-aarch64.tar.gz > release/atvloadly-openwrt-aarch64.tar.gz.sha256
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: atvloadly-openwrt-aarch64
+          path: |
+            release/atvloadly-openwrt-aarch64.tar.gz
+            release/atvloadly-openwrt-aarch64.tar.gz.sha256
+
+      - name: 发布标签版本
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          files: |
+            release/atvloadly-openwrt-aarch64.tar.gz
+            release/atvloadly-openwrt-aarch64.tar.gz.sha256

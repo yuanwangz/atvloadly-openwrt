@@ -128,6 +128,9 @@ func (t *InstallManager) Start(ctx context.Context, opts InstallOptions) error {
 
 	log.Debugf("Install Command: %s", strings.Join(append([]string{cmd.Name}, cmd.Args...), " "))
 
+	restoreMemoryPolicy := temporarilyAllowMemoryOvercommit()
+	defer restoreMemoryPolicy()
+
 	err = cmd.Run()
 	if err != nil {
 		if errors.Is(err, execx.ErrCommandTimeout) {
@@ -160,7 +163,7 @@ func (t *InstallManager) CleanTempFiles(ipaPath string) {
 	ipaName := filepath.Base(ipaPath)
 	fileNameWithoutExt := strings.TrimSuffix(ipaName, filepath.Ext(ipaName))
 
-	utils.RemoveAllFiles(filepath.Join(app.Config.Server.DataDir, "tmp"), fileNameWithoutExt+"*")
+	utils.RemoveAllFiles(app.TempDir(), fileNameWithoutExt+"*")
 	utils.RemoveAllFiles(os.TempDir(), fileNameWithoutExt+"*")
 
 	utils.RemoveAllFiles(os.TempDir(), "plume_stage*")
@@ -228,7 +231,8 @@ func (t *InstallManager) SaveLog(id uint) {
 	// Hide log password string
 	// data = strings.Replace(data, v.Password, "******", -1)
 
-	saveDir := filepath.Join(app.Config.Server.DataDir, "log")
+	// Author: XX. Signing logs can be large, so router builds keep them in tmpfs instead of consuming flash.
+	saveDir := filepath.Join(app.TempDir(), "log")
 	if err := os.MkdirAll(saveDir, os.ModePerm); err != nil {
 		log.Error("failed to create directory :" + saveDir)
 		return

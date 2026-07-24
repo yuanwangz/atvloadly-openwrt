@@ -20,7 +20,6 @@ import (
 	"github.com/bitxeno/atvloadly/internal/notify"
 	"github.com/bitxeno/atvloadly/internal/service"
 	"github.com/bitxeno/atvloadly/internal/task"
-	"github.com/bitxeno/atvloadly/internal/tty"
 	"github.com/bitxeno/atvloadly/internal/utils"
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
@@ -66,18 +65,6 @@ func route(fi *fiber.App) {
 		}
 		return fiber.ErrUpgradeRequired
 	})
-	fi.Get("/ws/tty", websocket.New(func(c *websocket.Conn) {
-		term, err := tty.New(c, "bash")
-		if err != nil {
-			msg := fmt.Sprintf("ERROR: %s", err.Error())
-			_ = c.WriteMessage(websocket.TextMessage, []byte(msg))
-			return
-		}
-		defer term.Close()
-
-		term.SetCWD(app.Config.Server.DataDir)
-		term.Start()
-	}))
 	fi.Get("/ws/pair", websocket.New(service.HandlePairMessage))
 	fi.Get("/ws/install", websocket.New(service.HandleInstallMessage))
 	fi.Get("/ws/login", websocket.New(service.HandleLoginMessage))
@@ -99,7 +86,7 @@ func route(fi *fiber.App) {
 	fi.Get("/apps/:id/log", func(c *fiber.Ctx) error {
 		id := utils.MustParseInt(c.Params("id"))
 
-		path := filepath.Join(app.Config.Server.DataDir, "log", fmt.Sprintf("task_%d.log", id))
+		path := filepath.Join(app.TempDir(), "log", fmt.Sprintf("task_%d.log", id))
 		c.Set("Cache-Control", "no-cache, no-store, must-revalidate;")
 		c.Set("pragma", "no-cache")
 		return c.Status(http.StatusOK).SendFile(path, false)
@@ -455,10 +442,11 @@ func route(fi *fiber.App) {
 
 		var ipaPath string
 		var ipaName string
+		var sourceURL string
 
 		file, err := c.FormFile("file")
 		if err == nil {
-			saveDir := filepath.Join(app.Config.Server.DataDir, "tmp")
+			saveDir := app.TempDir()
 			if err := os.MkdirAll(saveDir, os.ModePerm); err != nil {
 				return c.Status(http.StatusOK).JSON(apiError("failed to create directory: " + saveDir))
 			}
@@ -474,6 +462,7 @@ func route(fi *fiber.App) {
 			ipaName = file.Filename
 		} else if ipaURL != "" {
 			ipaPath = ipaURL
+			sourceURL = ipaURL
 			if parsed, err := url.Parse(ipaURL); err == nil && parsed.Path != "" {
 				ipaName = path.Base(parsed.Path)
 			}
@@ -519,6 +508,7 @@ func route(fi *fiber.App) {
 		appModel := model.InstalledApp{
 			IpaName:          ipaName,
 			IpaPath:          ipaPath,
+			SourceURL:        sourceURL,
 			Device:           selectedDevice.Name,
 			DeviceClass:      selectedDevice.DeviceClass,
 			UDID:             selectedDevice.UDID,
