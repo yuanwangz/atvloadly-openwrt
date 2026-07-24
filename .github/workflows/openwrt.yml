@@ -90,7 +90,10 @@ jobs:
           cp deploy/openwrt/uninstall.sh release/package/atvloadly-openwrt/
           chmod 755 release/package/atvloadly-openwrt/*.sh release/package/atvloadly-openwrt/atvloadly.init
           tar -C release/package -czf release/atvloadly-openwrt-aarch64.tar.gz atvloadly-openwrt
-          sha256sum release/atvloadly-openwrt-aarch64.tar.gz > release/atvloadly-openwrt-aarch64.tar.gz.sha256
+          (
+            cd release
+            sha256sum atvloadly-openwrt-aarch64.tar.gz > atvloadly-openwrt-aarch64.tar.gz.sha256
+          )
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v7
