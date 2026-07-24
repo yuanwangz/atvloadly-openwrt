@@ -33,7 +33,7 @@ jobs:
       - name: 构建前端并执行测试
         run: |
           cd web/static
-          pnpm install --frozen-lockfile
+          pnpm install --no-frozen-lockfile
           pnpm run build
           cd ../..
           go test ./...
