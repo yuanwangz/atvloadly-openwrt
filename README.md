@@ -56,13 +56,13 @@ cd atvloadly-openwrt
 5. 使用应用安装页面的 **URL** 输入框填写 IPA 的直接下载地址，而不是上传本地 IPA。
 6. 安装后保持该应用的自动刷新开关启用。
 
-推荐使用稳定地址，例如：
+推荐使用不会随版本变化的稳定地址，例如：
 
 ```text
-https://github.com/<owner>/<repo>/releases/latest/download/VidPlayPlus-tvOS-development.ipa
+https://example.com/downloads/VidPlayPlus-tvOS-development.ipa
 ```
 
-该 URL 必须能由路由器匿名直接下载。GitHub 私有 Release 需要额外鉴权，不能直接作为本版本的远程 IPA 源。
+该 URL 必须能由路由器直接下载。
 
 CoreADI 更新会临时下载 Apple Music APK 并仅持久保留所需运行库；该过程不把 Apple 的运行库打进本项目的公开发布包。
 
@@ -99,16 +99,6 @@ cd /tmp/atvloadly-openwrt
 ```
 
 卸载会删除 `/opt/atvloadly` 中的会话、配对数据和应用设置。
-
-## 构建产物
-
-每次推送都会通过 GitHub Actions 构建：
-
-- 静态 musl `atvloadly`，使用纯 Go mDNS，不依赖 Avahi 或 D-Bus；
-- 静态 musl、支持 RSD 的 `plumesign`；
-- 经 UPX `--best --lzma` 压缩并通过完整性校验的 OpenWrt 安装包。
-
-普通推送可在 Actions 的构建产物中下载；推送 `v*` 标签会创建 GitHub Release。
 
 ## 常见问题
 

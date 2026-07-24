@@ -65,6 +65,7 @@ jobs:
               cd .build/plumeimpactor
               cargo build --release --bin plumesign
             '
+          sudo chown -R "$USER:$USER" release .build/plumeimpactor
           cp .build/plumeimpactor/target/aarch64-unknown-linux-musl/release/plumesign release/bin/plumesign
           rm -rf .build/plumeimpactor
           docker image rm messense/rust-musl-cross:aarch64-musl || true
