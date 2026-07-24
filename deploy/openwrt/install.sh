@@ -31,9 +31,14 @@ if [ ! -f "$ATVLOADLY_ROOT/config.yaml" ]; then
 	cp "$ATVLOADLY_SOURCE/config.yaml" "$ATVLOADLY_ROOT/config.yaml"
 fi
 
-# Author: XX. CoreADI libraries are written to the data directory and this link exposes the same persistent files to plumesign.
-if [ ! -e "$ATVLOADLY_DATA/.config/PlumeImpactor/lib" ]; then
-	ln -s "$ATVLOADLY_DATA/PlumeImpactor/lib" "$ATVLOADLY_DATA/.config/PlumeImpactor/lib"
+# Author: XX. CoreADI libraries stay in persistent data; replace legacy temporary links before exposing them to plumesign.
+PLUME_LIBRARY_LINK="$ATVLOADLY_DATA/.config/PlumeImpactor/lib"
+PLUME_LIBRARY_PATH="$ATVLOADLY_DATA/PlumeImpactor/lib"
+if [ -L "$PLUME_LIBRARY_LINK" ] && [ "$(readlink "$PLUME_LIBRARY_LINK")" != "$PLUME_LIBRARY_PATH" ]; then
+	rm "$PLUME_LIBRARY_LINK"
+fi
+if [ ! -e "$PLUME_LIBRARY_LINK" ]; then
+	ln -s "$PLUME_LIBRARY_PATH" "$PLUME_LIBRARY_LINK"
 fi
 
 cp "$ATVLOADLY_SOURCE/atvloadly.init" /etc/init.d/atvloadly
