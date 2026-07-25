@@ -54,6 +54,15 @@ type InfoPlist struct {
 }
 
 func ParseFile(path string) (*IPA, error) {
+	return parseFile(path, true)
+}
+
+// ParseFileWithoutIcon reads only the app metadata needed by remote installations.
+func ParseFileWithoutIcon(path string) (*IPA, error) {
+	return parseFile(path, false)
+}
+
+func parseFile(path string, extractIcon bool) (*IPA, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -67,10 +76,14 @@ func ParseFile(path string) (*IPA, error) {
 		return nil, err
 	}
 
-	return Parse(f, stat.Size())
+	return parse(f, stat.Size(), extractIcon)
 }
 
 func Parse(readerAt io.ReaderAt, size int64) (*IPA, error) {
+	return parse(readerAt, size, true)
+}
+
+func parse(readerAt io.ReaderAt, size int64, extractIcon bool) (*IPA, error) {
 	r, err := zip.NewReader(readerAt, size)
 	if err != nil {
 		return nil, err
@@ -86,19 +99,21 @@ func Parse(readerAt io.ReaderAt, size int64) (*IPA, error) {
 			plistFile = f
 		}
 
-		// parse old icons
-		if match := regOldIconRegular.MatchString(f.Name); match {
-			iconFiles = append(iconFiles, f)
-		}
+		if extractIcon {
+			// parse old icons
+			if match := regOldIconRegular.MatchString(f.Name); match {
+				iconFiles = append(iconFiles, f)
+			}
 
-		// parse new icons
-		if match := regNewIconRegular.MatchString(f.Name); match {
-			iconFiles = append(iconFiles, f)
-		}
+			// parse new icons
+			if match := regNewIconRegular.MatchString(f.Name); match {
+				iconFiles = append(iconFiles, f)
+			}
 
-		// parse Assets.car
-		if match := regAssetRegular.MatchString(f.Name); match {
-			assetFile = f
+			// parse Assets.car
+			if match := regAssetRegular.MatchString(f.Name); match {
+				assetFile = f
+			}
 		}
 
 	}
@@ -127,29 +142,31 @@ func Parse(readerAt io.ReaderAt, size int64) (*IPA, error) {
 		}
 	}
 
-	// select bigest icon file
-	var iconFile *zip.File
-	var maxSize = -1
-	for _, f := range iconFiles {
-		size, err := iconSize(f.Name)
-		if err != nil {
-			return nil, err
+	if extractIcon {
+		// select bigest icon file
+		var iconFile *zip.File
+		var maxSize = -1
+		for _, f := range iconFiles {
+			size, err := iconSize(f.Name)
+			if err != nil {
+				return nil, err
+			}
+			if size > maxSize {
+				maxSize = size
+				iconFile = f
+			}
 		}
-		if size > maxSize {
-			maxSize = size
-			iconFile = f
-		}
-	}
-	// parse icon
-	img, err := parseIconImage(iconFile)
-	if err == nil {
-		app.icon = img
-	} else if assetFile != nil {
-		// try get icon from Assets.car
-		if img, err := parseIconAssets(assetFile); err == nil {
+		// parse icon
+		img, err := parseIconImage(iconFile)
+		if err == nil {
 			app.icon = img
-		} else {
-			log.Println(err)
+		} else if assetFile != nil {
+			// try get icon from Assets.car
+			if img, err := parseIconAssets(assetFile); err == nil {
+				app.icon = img
+			} else {
+				log.Println(err)
+			}
 		}
 	}
 

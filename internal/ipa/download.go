@@ -49,8 +49,8 @@ func DownloadAndParse(rawURL string, progressFn DownloadProgressFn) (*DownloadRe
 		return nil, err
 	}
 
-	// Parse
-	result, err := parseIPAMetadata(tmpPath, tmpDir)
+	// Author: XX. Remote installs do not retain icons, so skip expensive Assets.car decoding on memory-constrained routers.
+	result, err := parseIPAMetadata(tmpPath, tmpDir, false)
 	if err != nil {
 		_ = os.Remove(tmpPath)
 		return nil, err
@@ -67,7 +67,7 @@ func ParseLocalIPA(localPath string) (*DownloadResult, error) {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
-	result, err := parseIPAMetadata(localPath, tmpDir)
+	result, err := parseIPAMetadata(localPath, tmpDir, true)
 	if err != nil {
 		return nil, err
 	}
@@ -121,9 +121,15 @@ func downloadIPA(rawURL string, saveDir string, progressFn DownloadProgressFn) (
 	return tmpPath, nil
 }
 
-// parseIPAMetadata parses an IPA file and extracts its icon.
-func parseIPAMetadata(ipaPath string, saveDir string) (*DownloadResult, error) {
-	info, err := ParseFile(ipaPath)
+// parseIPAMetadata parses an IPA file and optionally extracts its icon.
+func parseIPAMetadata(ipaPath string, saveDir string, extractIcon bool) (*DownloadResult, error) {
+	var info *IPA
+	var err error
+	if extractIcon {
+		info, err = ParseFile(ipaPath)
+	} else {
+		info, err = ParseFileWithoutIcon(ipaPath)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse ipa: %w", err)
 	}
@@ -135,7 +141,7 @@ func parseIPAMetadata(ipaPath string, saveDir string) (*DownloadResult, error) {
 	}
 
 	icon := info.Icon()
-	if icon != nil {
+	if extractIcon && icon != nil {
 		timestamp := time.Now().UnixMicro()
 		name := sanitizeName(utils.FileNameWithoutExt(filepath.Base(ipaPath)))
 		iconName := fmt.Sprintf("%s_%d.png", name, timestamp)
